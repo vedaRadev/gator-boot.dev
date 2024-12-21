@@ -44,6 +44,7 @@ func HandleLogin(s *State, args []string) error {
     return nil
 }
 
+// TODO Do we really want to set the new user as the current immediately upon registration?
 func HandleRegister(s *State, args []string) error {
     if len(args) == 0 { return fmt.Errorf("expected argument: name") }
 
@@ -63,6 +64,28 @@ func HandleRegister(s *State, args []string) error {
             "WARNING: User was created in the db but we failed to write them to the gatorconfig: %v\n",
             err,
         )
+    }
+
+    return nil
+}
+
+func HandleReset(s *State, args []string) error {
+    _, err := s.Db.Reset(context.Background())
+    if err != nil { return err }
+
+    return nil
+}
+
+func HandleUsers(s *State, args []string) error {
+    users, err := s.Db.GetUsers(context.Background())
+    if err != nil { return err }
+
+    for _, user := range users {
+        fmt.Printf("* %v", user.Name)
+        if user.Name == s.Cfg.CurrentUserName {
+            fmt.Print(" (current)")
+        }
+        fmt.Println()
     }
 
     return nil
@@ -89,12 +112,18 @@ func main() {
     Commands = make(CommandMap)
     Commands["login"] = HandleLogin
     Commands["register"] = HandleRegister
+    Commands["reset"] = HandleReset
+    Commands["users"] = HandleUsers
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]
     if len(args) == 0 {
         // TODO print help info
-        fmt.Printf("Expected command\n");
+        fmt.Printf("Expected command, one of:\n");
+        for key := range Commands {
+            fmt.Printf("* %v\n", key)
+        }
+
         os.Exit(1)
     }
 
