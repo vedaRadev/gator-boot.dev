@@ -130,6 +130,17 @@ func HandleAddFeed(s *State, args []string) error {
 
     return nil
 }
+
+func HandleFeeds(s *State, args []string) error {
+    feeds, err := s.Db.GetFeeds(context.Background())
+    if err != nil { return fmt.Errorf("Failed to get feeds from db: %w", err) }
+
+    for _, feed := range feeds {
+        fmt.Printf("%v [%v] (%v)\n", feed.Name, feed.Url, feed.UserName)
+    }
+
+    return nil
+}
 //============================== END COMMANDS ==============================// 
 type RssFeed struct {
     Channel struct {
@@ -197,6 +208,7 @@ func main() {
     Commands["users"] = HandleUsers
     Commands["agg"] = HandleAgg
     Commands["addfeed"] = HandleAddFeed
+    Commands["feeds"] = HandleFeeds
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]
