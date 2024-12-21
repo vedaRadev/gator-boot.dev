@@ -8,6 +8,11 @@ import (
     "database/sql"
     "context"
     "time"
+    "net/http"
+    "io"
+    "encoding/xml"
+    "bytes"
+    "html"
 
     "github.com/google/uuid"
 
@@ -15,13 +20,14 @@ import (
     "github.com/vedaRadev/gator-boot.dev/internal/config"
 )
 
-type CommandMap map[string]func(*State, []string)error
+// TODO Is this app state or command state? Not sure yet.
 type State struct   {
     Cfg *config.Config
     Db *database.Queries
 }
 
-// TODO Get rid of as many global variables as possible
+//============================== COMMANDS ==============================// 
+type CommandMap map[string]func(*State, []string)error
 var Commands CommandMap
 
 func HandleLogin(s *State, args []string) error {
@@ -91,6 +97,57 @@ func HandleUsers(s *State, args []string) error {
     return nil
 }
 
+func HandleAgg(s *State, args []string) error {
+    // if len(args) == 0 { return fmt.Errorf("expected argument: rss url") }
+    // feed, err := FetchFeed(context.Background(), args[0])
+    feed, err := FetchFeed(context.Background(), "https://wagslane.dev/index.xml")
+    if err != nil { return err }
+    fmt.Printf("feed: %v\n", feed)
+    return nil
+}
+//============================== END COMMANDS ==============================// 
+type RssFeed struct {
+    Channel struct {
+        Title string `xml:"title"`
+        Link string `xml:"link"`
+        Description string `xml:"description"`
+        Item []RssItem `xml:"item"`
+    } `xml:"channel"`
+}
+
+type RssItem struct {
+    Title string `xml:"title"`
+    Link string `xml:"link"`
+    Description string `xml:"description"`
+    PubDate string `xml:"pubDate"`
+}
+
+func FetchFeed(ctx context.Context, feedUrl string) (*RssFeed, error) {
+    req, err := http.NewRequestWithContext(ctx, "GET", feedUrl, bytes.NewBuffer([]byte {}))
+    if err != nil { return nil, err }
+    req.Header.Set("User-Agent", "gator")
+
+    res, err := (&http.Client {}).Do(req)
+    defer res.Body.Close()
+    if err != nil { return nil, err }
+
+    data, err := io.ReadAll(res.Body)
+    if err != nil { return nil, err }
+
+    var rssFeed RssFeed
+    if err := xml.Unmarshal(data, &rssFeed); err != nil { return nil, err }
+
+    rssFeed.Channel.Title = html.UnescapeString(rssFeed.Channel.Title)
+    rssFeed.Channel.Description = html.UnescapeString(rssFeed.Channel.Description)
+    for i := range rssFeed.Channel.Item {
+        item := &rssFeed.Channel.Item[i]
+        item.Title = html.UnescapeString(item.Title)
+        item.Description = html.UnescapeString(item.Description)
+    }
+
+    return &rssFeed, nil
+}
+
 func main() {
     var state State
 
@@ -108,12 +165,12 @@ func main() {
     }
     state.Db = database.New(db)
 
-
     Commands = make(CommandMap)
     Commands["login"] = HandleLogin
     Commands["register"] = HandleRegister
     Commands["reset"] = HandleReset
     Commands["users"] = HandleUsers
+    Commands["agg"] = HandleAgg
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]
