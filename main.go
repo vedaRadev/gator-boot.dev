@@ -22,11 +22,13 @@ import (
 )
 
 // TODO Is this app state or command state? Not sure yet.
+// Commands need access to the State type regardless.
 type State struct   {
     Cfg *config.Config
     Db *database.Queries
 }
 
+// TODO move commands to their own dir?
 //============================== COMMANDS ==============================// 
 type CommandMap map[string]func(*State, []string)error
 var Commands CommandMap
@@ -107,6 +109,24 @@ func HandleAgg(s *State, args []string) error {
     return nil
 }
 
+func followFeed(s *State, userId uuid.UUID, feedId uuid.UUID) (database.CreateFeedFollowRow, error) {
+    var feedFollow database.CreateFeedFollowRow
+
+    now := time.Now()
+    params := database.CreateFeedFollowParams {
+        ID: uuid.New(),
+        CreatedAt: now,
+        UpdatedAt: now,
+        UserID: userId,
+        FeedID: feedId,
+    }
+
+    feedFollow, err := s.Db.CreateFeedFollow(context.Background(), params)
+    if err != nil { return feedFollow, err }
+
+    return feedFollow, nil
+}
+
 func HandleAddFeed(s *State, args []string) error {
     if len(args) != 2 { return fmt.Errorf("expected 2 arguments: feed_name feed_url") }
 
@@ -128,6 +148,11 @@ func HandleAddFeed(s *State, args []string) error {
 
     fmt.Printf("Added feed: %v\n", feed)
 
+    feedFollow, err := followFeed(s, currentUser.ID, feed.ID)
+    if err != nil { return fmt.Errorf("failed to follow feed: %w", err) }
+
+    fmt.Printf("%v has followed feed %v\n", feedFollow.UserName, feedFollow.FeedName);
+
     return nil
 }
 
@@ -137,6 +162,44 @@ func HandleFeeds(s *State, args []string) error {
 
     for _, feed := range feeds {
         fmt.Printf("%v [%v] (%v)\n", feed.Name, feed.Url, feed.UserName)
+    }
+
+    return nil
+}
+
+func HandleFollow(s *State, args []string) error {
+    if len(args) != 1 { return fmt.Errorf("expected 1 argument: feed_url") }
+
+    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
+    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
+
+    feed, err := s.Db.GetFeed(context.Background(), args[0])
+    if err != nil { return fmt.Errorf("failed to get feed from db (do you need to create it?): %w", err) }
+
+    feedFollow, err := followFeed(s, currentUser.ID, feed.ID)
+    if err != nil { return fmt.Errorf("failed to follow feed (are you already following it?): %w", err) }
+    
+    fmt.Printf("%v has followed feed %v\n", feedFollow.UserName, feedFollow.FeedName);
+
+    return nil
+}
+
+func HandleFollowing(s *State, args []string) error {
+    if len(args) > 0 { return fmt.Errorf("expected 0 arguments") }
+
+    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
+    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
+
+    feeds, err := s.Db.GetFeedFollowsForUser(context.Background(), currentUser.ID)
+    if err != nil { return fmt.Errorf("failed to get feed follows: %w", err) }
+
+    if len(feeds) > 0 {
+        fmt.Printf("%v is following\n", currentUser.Name)
+        for _, feed := range feeds {
+            fmt.Printf(" - %v (%v)\n", feed.FeedName, feed.FeedUrl)
+        }
+    } else {
+        fmt.Printf("%v is not following any feeds\n", currentUser.Name)
     }
 
     return nil
@@ -209,6 +272,8 @@ func main() {
     Commands["agg"] = HandleAgg
     Commands["addfeed"] = HandleAddFeed
     Commands["feeds"] = HandleFeeds
+    Commands["follow"] = HandleFollow
+    Commands["following"] = HandleFollowing
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]

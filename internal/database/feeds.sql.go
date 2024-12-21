@@ -48,6 +48,25 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
+const getFeed = `-- name: GetFeed :one
+SELECT id, created_at, updated_at, name, url, user_id FROM feeds WHERE url = $1
+`
+
+// TODO join on users to get user name?
+func (q *Queries) GetFeed(ctx context.Context, url string) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, getFeed, url)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Url,
+		&i.UserID,
+	)
+	return i, err
+}
+
 const getFeeds = `-- name: GetFeeds :many
 SELECT f.id, f.created_at, f.updated_at, f.name, f.url, f.user_id, u.name as user_name
 FROM feeds f INNER JOIN users u ON f.user_id = u.id

@@ -8,6 +8,7 @@ import (
 
 const defaultConfigFileName string = ".gatorconfig.json"
 
+// TODO we probably should store the current user _id_, not name.
 type Config struct {
     DbUrl string `json:"db_url"`
     CurrentUserName string `json:"current_user_name"`
