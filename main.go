@@ -33,6 +33,14 @@ type State struct   {
 type CommandMap map[string]func(*State, []string)error
 var Commands CommandMap
 
+func middlewareLoggedIn(handler func(*State, []string, database.User) error) func(*State, []string) error {
+    return func(s *State, args []string) error {
+        currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
+        if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
+        return handler(s, args, currentUser)
+    }
+}
+
 func HandleLogin(s *State, args []string) error {
     if len(args) == 0 { return fmt.Errorf("expected argument: username") }
     user, err := s.Db.GetUser(context.Background(), args[0])
@@ -127,11 +135,8 @@ func followFeed(s *State, userId uuid.UUID, feedId uuid.UUID) (database.CreateFe
     return feedFollow, nil
 }
 
-func HandleAddFeed(s *State, args []string) error {
+func HandleAddFeed(s *State, args []string, currentUser database.User) error {
     if len(args) != 2 { return fmt.Errorf("expected 2 arguments: feed_name feed_url") }
-
-    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
-    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
 
     now := time.Now()
     params := database.CreateFeedParams {
@@ -167,11 +172,8 @@ func HandleFeeds(s *State, args []string) error {
     return nil
 }
 
-func HandleFollow(s *State, args []string) error {
+func HandleFollow(s *State, args []string, currentUser database.User) error {
     if len(args) != 1 { return fmt.Errorf("expected 1 argument: feed_url") }
-
-    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
-    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
 
     feed, err := s.Db.GetFeed(context.Background(), args[0])
     if err != nil { return fmt.Errorf("failed to get feed from db (do you need to create it?): %w", err) }
@@ -184,11 +186,8 @@ func HandleFollow(s *State, args []string) error {
     return nil
 }
 
-func HandleFollowing(s *State, args []string) error {
+func HandleFollowing(s *State, args []string, currentUser database.User) error {
     if len(args) > 0 { return fmt.Errorf("expected 0 arguments") }
-
-    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
-    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
 
     feeds, err := s.Db.GetFeedFollowsForUser(context.Background(), currentUser.ID)
     if err != nil { return fmt.Errorf("failed to get feed follows: %w", err) }
@@ -270,10 +269,10 @@ func main() {
     Commands["reset"] = HandleReset
     Commands["users"] = HandleUsers
     Commands["agg"] = HandleAgg
-    Commands["addfeed"] = HandleAddFeed
+    Commands["addfeed"] = middlewareLoggedIn(HandleAddFeed)
     Commands["feeds"] = HandleFeeds
-    Commands["follow"] = HandleFollow
-    Commands["following"] = HandleFollowing
+    Commands["follow"] = middlewareLoggedIn(HandleFollow)
+    Commands["following"] = middlewareLoggedIn(HandleFollowing)
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]
