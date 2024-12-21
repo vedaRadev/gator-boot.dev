@@ -13,6 +13,7 @@ import (
     "encoding/xml"
     "bytes"
     "html"
+    "strings"
 
     "github.com/google/uuid"
 
@@ -105,6 +106,30 @@ func HandleAgg(s *State, args []string) error {
     fmt.Printf("feed: %v\n", feed)
     return nil
 }
+
+func HandleAddFeed(s *State, args []string) error {
+    if len(args) != 2 { return fmt.Errorf("expected 2 arguments: feed_name feed_url") }
+
+    currentUser, err := s.Db.GetUser(context.Background(), s.Cfg.CurrentUserName)
+    if err != nil { return fmt.Errorf("failed to get current user from db: %w", err) }
+
+    now := time.Now()
+    params := database.CreateFeedParams {
+        ID: uuid.New(),
+        CreatedAt: now,
+        UpdatedAt: now,
+        Name: args[0],
+        Url: args[1],
+        UserID: currentUser.ID,
+    }
+
+    feed, err := s.Db.CreateFeed(context.Background(), params)
+    if err != nil { return fmt.Errorf("failed to create and insert feed: %w", err) }
+
+    fmt.Printf("Added feed: %v\n", feed)
+
+    return nil
+}
 //============================== END COMMANDS ==============================// 
 type RssFeed struct {
     Channel struct {
@@ -171,6 +196,7 @@ func main() {
     Commands["reset"] = HandleReset
     Commands["users"] = HandleUsers
     Commands["agg"] = HandleAgg
+    Commands["addfeed"] = HandleAddFeed
 
     // NOTE do we want to slice args or just pass the entire os args through to every command?
     args := os.Args[1:]
@@ -185,7 +211,7 @@ func main() {
     }
 
     commandName := args[0]
-    if handler, exists := Commands[commandName]; exists {
+    if handler, exists := Commands[strings.ToLower(commandName)]; exists {
         if err := handler(&state, args[1:]); err != nil {
             fmt.Printf("Failed: %v\n", err)
             os.Exit(1)
